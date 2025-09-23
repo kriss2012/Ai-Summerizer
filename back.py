@@ -88,4 +88,4 @@ def summarize():
 if __name__ == '__main__':
     print("Starting Flask server for AI Summarizer...")
     print("Open http://127.0.0.1:5000 in your browser to use.")
-    app.run(debug=True, port=5000)
+    app.run(host='0.0.0.0', debug=True, port=5000)
