@@ -1,19 +1,6 @@
-# AI Text Summarizer Backend (app.py)
-# To run this:
-# 1. Make sure you have Python installed.
-# 2. Install Flask and spacy:
-#    pip install Flask flask-cors
-#    pip install spacy
-# 3. Download the spacy model:
-#    python -m spacy download en_core_web_sm
-# 4. Run the server from your terminal:
-#    python app.py
-
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import spacy
-from spacy.lang.en.stop_words import STOP_WORDS
-from string import punctuation
 from collections import Counter
 
 app = Flask(__name__)
@@ -36,35 +23,48 @@ def summarize_text(text, num_sentences=3):
 
     doc = nlp(text)
 
-    # 1. Get keywords (non-stopword tokens)
-    keywords = [token.text for token in doc if not token.is_stop and not token.is_punct]
+    # 1. Get keywords (non-stopword, non-punctuation tokens)
+    keywords = [token.text.lower() for token in doc if not token.is_stop and not token.is_punct]
     
     # 2. Calculate word frequencies
     word_freq = Counter(keywords)
-    max_freq = max(word_freq.values(), default=1)
+    if not word_freq:
+        return "Not enough content to summarize."
+        
+    max_freq = max(word_freq.values())
     
     # 3. Normalize frequencies
     for word in word_freq.keys():
         word_freq[word] = (word_freq[word] / max_freq)
         
-    # 4. Score sentences
+    # 4. Score sentences based on word frequencies
     sentence_scores = {}
     for sent in doc.sents:
+        # Ignore very short sentences
+        if len(sent) < 5:
+            continue
         for word in sent:
-            if word.text.lower() in word_freq.keys():
-                if sent in sentence_scores.keys():
+            if word.text.lower() in word_freq:
+                if sent in sentence_scores:
                     sentence_scores[sent] += word_freq[word.text.lower()]
                 else:
                     sentence_scores[sent] = word_freq[word.text.lower()]
+
+    if not sentence_scores:
+        return "Could not determine the main sentences. Please provide more text."
 
     # 5. Get the top N sentences
     summarized_sentences = sorted(sentence_scores, key=sentence_scores.get, reverse=True)
     
     # 6. Join them to form the summary
-    summary = [sent.text for sent in summarized_sentences[:num_sentences]]
+    summary = [sent.text.strip() for sent in summarized_sentences[:num_sentences]]
     
     return " ".join(summary)
 
+@app.route('/')
+def index():
+    """Serve the frontend HTML file."""
+    return send_from_directory('.', 'App.html')
 
 @app.route('/summarize', methods=['POST'])
 def summarize():
@@ -73,15 +73,19 @@ def summarize():
 
     data = request.get_json()
     text = data.get('text', '')
+    num_sentences = data.get('num_sentences', 3)
 
     if not text:
         return jsonify({"error": "No text provided"}), 400
+    
+    if len(text.split()) < 20: # Basic check for minimum text length
+        return jsonify({"error": "Please provide a longer text for a better summary."}), 400
 
-    summary = summarize_text(text)
+    summary = summarize_text(text, num_sentences)
     
     return jsonify({"summary": summary})
 
 if __name__ == '__main__':
     print("Starting Flask server for AI Summarizer...")
-    print("Open summarizer.html in your browser to use.")
+    print("Open http://127.0.0.1:5000 in your browser to use.")
     app.run(debug=True, port=5000)
